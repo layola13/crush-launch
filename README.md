@@ -60,6 +60,7 @@ Unlike `grok-launch`, no local web server is started. Crush can call OpenAI-comp
 ```bash
 ./install.sh
 ```
+`./install.sh` also auto-installs the upstream CLI when it is missing (use `--skip-cli` to opt out).
 
 ### 2. Edit user config
 

@@ -11,10 +11,12 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +30,9 @@ _MANAGED_ENV_PREFIXES = ("CRUSH_LAUNCH_",)
 _MANAGED_ENV_KEYS = {"CRUSH_BIN"}
 
 _LOADED_ENV_FILES: list[Path] = []
+_CODEX_SESSION_ID = f"session-{uuid.uuid4()}"
+_CODEX_THREAD_ID = str(uuid.uuid4())
+_CODEX_INSTALLATION_ID = str(uuid.uuid4())
 
 
 def _parse_dotenv(path: Path) -> dict[str, str]:
@@ -113,6 +118,56 @@ def load_dotenv_files() -> list[Path]:
 
 def _truthy(name: str) -> bool:
     return (os.environ.get(name) or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _codex_version() -> str:
+    configured = (os.environ.get("CODEX_VERSION") or "").strip()
+    if configured:
+        return configured
+    codex_bin = (os.environ.get("CODEX_BIN") or "codex").strip() or "codex"
+    try:
+        result = subprocess.run(
+            [codex_bin, "--version"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+    except Exception:
+        return "0.144.6"
+    for token in result.stdout.replace("v", " v").split():
+        candidate = token.lstrip("v")
+        parts = candidate.split(".")
+        if len(parts) >= 2 and all(part.isdigit() for part in parts[:2]):
+            return candidate
+    return "0.144.6"
+
+
+def _codex_user_agent() -> str:
+    originator = (os.environ.get("CODEX_ORIGINATOR") or "codex_cli_rs").strip() or "codex_cli_rs"
+    version = _codex_version()
+    system = platform.system() or "Unknown"
+    release = platform.release() or "unknown"
+    arch = platform.machine() or "unknown"
+    return f"{originator}/{version} ({system} {release}; {arch})"
+
+
+def _codex_headers() -> dict[str, str]:
+    if not _truthy("CODEX_HEAD"):
+        return {}
+
+    headers = {
+        "User-Agent": (os.environ.get("CODEX_USER_AGENT") or _codex_user_agent()).strip(),
+        "Originator": (os.environ.get("CODEX_ORIGINATOR") or "codex_cli_rs").strip() or "codex_cli_rs",
+        "session-id": (os.environ.get("CODEX_SESSION_ID") or _CODEX_SESSION_ID).strip(),
+        "thread-id": (os.environ.get("CODEX_THREAD_ID") or _CODEX_THREAD_ID).strip(),
+        "x-codex-installation-id": (os.environ.get("CODEX_INSTALLATION_ID") or _CODEX_INSTALLATION_ID).strip(),
+    }
+    beta = (os.environ.get("CODEX_OPENAI_BETA") or "").strip()
+    if beta:
+        headers["OpenAI-Beta"] = beta
+    return headers
 
 
 def _optional_int(name: str) -> int | None:
@@ -219,16 +274,19 @@ def build_crush_config(cfg: dict[str, str]) -> dict[str, Any]:
     if _truthy("CRUSH_LAUNCH_VERBOSE"):
         config["options"]["debug"] = True
 
+    merged_headers = _codex_headers()
     extra_headers_raw = (os.environ.get("CRUSH_LAUNCH_EXTRA_HEADERS") or "").strip()
     if extra_headers_raw:
         try:
             headers = json.loads(extra_headers_raw)
             if isinstance(headers, dict):
-                config["providers"][provider]["extra_headers"] = headers
+                merged_headers.update({str(key): str(value) for key, value in headers.items()})
             else:
                 print("warning: CRUSH_LAUNCH_EXTRA_HEADERS must be a JSON object", file=sys.stderr)
         except json.JSONDecodeError as exc:
             print(f"warning: invalid CRUSH_LAUNCH_EXTRA_HEADERS JSON: {exc}", file=sys.stderr)
+    if merged_headers:
+        config["providers"][provider]["extra_headers"] = merged_headers
 
     return config
 

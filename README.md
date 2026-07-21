@@ -107,12 +107,14 @@ crush-launch run "hello"
 
 ### `.env` load priority
 
-1. `CRUSH_LAUNCH_ENV`
-2. `./.env` or `./.crush-launch.env` (cwd)
-3. Parent directories (up to 6 levels)
-4. Package directory `.env`
+1. `CRUSH_LAUNCH_ENV` if set
+2. Package directory `.env` (launcher-local, next to `main.py`)
+3. `./.env` or `./.crush-launch.env` (cwd)
+4. Parent directories (up to 6 levels)
 5. `~/.config/crush-launch/.env`
 6. `~/.crush-launch.env`
+
+For crush-launch-managed keys (`CRUSH_LAUNCH_*` and `CRUSH_BIN`), higher-priority `.env` files override stale shell exports.
 
 ## Usage (same flags as crush)
 

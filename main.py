@@ -24,6 +24,8 @@ _REQUIRED_KEYS = (
     "CRUSH_LAUNCH_BASE_URL",
     "CRUSH_LAUNCH_MODEL",
 )
+_MANAGED_ENV_PREFIXES = ("CRUSH_LAUNCH_",)
+_MANAGED_ENV_KEYS = {"CRUSH_BIN"}
 
 _LOADED_ENV_FILES: list[Path] = []
 
@@ -58,6 +60,8 @@ def _candidate_env_paths() -> list[Path]:
     if explicit:
         paths.append(Path(explicit).expanduser())
 
+    paths.append(_HERE / ".env")
+
     cwd = Path.cwd()
     paths.append(cwd / ".env")
     paths.append(cwd / ".crush-launch.env")
@@ -69,8 +73,6 @@ def _candidate_env_paths() -> list[Path]:
         paths.append(parent / ".env")
         paths.append(parent / ".crush-launch.env")
         parent = parent.parent
-
-    paths.append(_HERE / ".env")
 
     xdg = Path(os.environ.get("XDG_CONFIG_HOME") or "~/.config").expanduser()
     paths.append(xdg / "crush-launch" / ".env")
@@ -86,9 +88,13 @@ def _candidate_env_paths() -> list[Path]:
     return uniq
 
 
+def _is_managed_env_key(key: str) -> bool:
+    return key in _MANAGED_ENV_KEYS or key.startswith(_MANAGED_ENV_PREFIXES)
+
+
 def load_dotenv_files() -> list[Path]:
     loaded: list[Path] = []
-    claimed = set(os.environ.keys())
+    claimed = {key for key in os.environ.keys() if not _is_managed_env_key(key)}
 
     for path in _candidate_env_paths():
         if not path.is_file():
